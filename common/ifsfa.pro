@@ -157,12 +157,17 @@ pro ifsfa,initproc,cols=cols,rows=rows,noplots=noplots,oned=oned,$
 
   if ~ tag_exist(initdat,'noemlinfit') then begin
 ;    Get linelist
-     linelist = ifsf_linelist(initdat.lines)
+     if tag_exist(initdat,'argslinelist') then $
+        linelist = ifsf_linelist(initdat.lines,_extra=initdat.argslinelist) $
+     else linelist = ifsf_linelist(initdat.lines)
      nlines = linelist.count()
 ;    Linelist with doublets to combine
      emldoublets = [['[SII]6716','[SII]6731'],$
                     ['[OII]3726','[OII]3729'],$
-                    ['[NI]5198','[NI]5200']]
+                    ['[NI]5198','[NI]5200'],$
+                    ['[NeIII]3869','[NeIII]3967'],$
+                    ['[NeV]3345','[NeV]3426'],$
+                    ['MgII2796','MgII2803']]
      sdoub = size(emldoublets)
      if sdoub[0] eq 1 then ndoublets = 1 else ndoublets = sdoub[2]
      lines_with_doublets = initdat.lines
@@ -173,7 +178,11 @@ pro ifsfa,initproc,cols=cols,rows=rows,noplots=noplots,oned=oned,$
            lines_with_doublets = [lines_with_doublets,dkey]
         endif
      endfor
-     linelist_with_doublets = ifsf_linelist(lines_with_doublets)
+     if tag_exist(initdat,'argslinelist') then $
+        linelist_with_doublets = $
+           ifsf_linelist(lines_with_doublets,_extra=initdat.argslinelist) $
+     else  linelist_with_doublets = $
+           ifsf_linelist(lines_with_doublets)
   endif
 
   if tag_exist(initdat,'fcnpltcont') then $
@@ -1042,14 +1051,17 @@ pro ifsfa,initproc,cols=cols,rows=rows,noplots=noplots,oned=oned,$
            if ctbd gt 0 then begin
               emlweq['ftot',line,ibd] = bad
               emlflx['ftot',line,ibd] = bad
-              emlflxerr['ftot',line,ibd] = bad
+              if ~ tag_exist(initdat,'emlkeeperr') then $
+                 emlflxerr['ftot',line,ibd] = bad
               for k=0,initdat.maxncomp-1 do begin
                  cstr='c'+string(k+1,format='(I0)')
                  emlweq['f'+cstr,line,ibd] = bad
                  emlflx['f'+cstr,line,ibd] = bad
-                 emlflxerr['f'+cstr,line,ibd] = bad
                  emlflx['f'+cstr+'pk',line,ibd] = bad
-                 emlflxerr['f'+cstr+'pk',line,ibd] = bad
+                 if ~ tag_exist(initdat,'emlkeeperr') then begin
+                    emlflxerr['f'+cstr,line,ibd] = bad
+                    emlflxerr['f'+cstr+'pk',line,ibd] = bad
+                 endif
                  emlwav[cstr,line,ibd] = bad
                  emlwaverr[cstr,line,ibd] = bad
                  emlsig[cstr,line,ibd] = bad

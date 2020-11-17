@@ -167,11 +167,18 @@ pro ifsf_makemaps,initproc
 ;  Get linelist
    if ~ tag_exist(initdat,'noemlinfit') then begin
       linelabels=1b
-      linelist = ifsf_linelist(initdat.lines,linelab=linelabels)
+      if tag_exist(initdat,'argslinelist') then $
+         linelist = ifsf_linelist(initdat.lines,linelab=linelabels,$
+                                  _extra=initdat.argslinelist) $
+      else $
+         linelist = ifsf_linelist(initdat.lines,linelab=linelabels)
 ;     Linelist with doublets to combine
-      emldoublets = [['[SII]6716','[SII]6731'],$
-                     ['[OII]3726','[OII]3729'],$
-                     ['[NI]5198','[NI]5200']]
+     emldoublets = [['[SII]6716','[SII]6731'],$
+                    ['[OII]3726','[OII]3729'],$
+                    ['[NI]5198','[NI]5200'],$
+                    ['[NeIII]3869','[NeIII]3967'],$
+                    ['[NeV]3345','[NeV]3426'],$
+                    ['MgII2796','MgII2803']]
       sdoub = size(emldoublets)
       if sdoub[0] eq 1 then ndoublets = 1 else ndoublets = sdoub[2]
       lines_with_doublets = initdat.lines
@@ -182,11 +189,21 @@ pro ifsf_makemaps,initproc
             lines_with_doublets = [lines_with_doublets,dkey]
          endif
       endfor
-      linelist_with_doublets = $
-         ifsf_linelist(lines_with_doublets,linelab=linelabels)
+      if tag_exist(initdat,'argslinelist') then $
+         linelist_with_doublets = $
+            ifsf_linelist(lines_with_doublets,linelab=linelabels,$
+                          _extra=initdat.argslinelist) $
+      else $
+         linelist_with_doublets = $
+            ifsf_linelist(lines_with_doublets,linelab=linelabels)
+
    endif
    if tag_exist(initdat,'donad') then $
-      nadlinelist = ifsf_linelist(['NaD1','NaD2','HeI5876'])
+      if tag_exist(initdat,'argslinelist') then $
+         nadlinelist = ifsf_linelist(['NaD1','NaD2','HeI5876'],$
+                                     _extra=initdat.argslinelist) $
+      else $
+         nadlinelist = ifsf_linelist(['NaD1','NaD2','HeI5876'])
 
 ;  Get range file
 ;
@@ -236,10 +253,6 @@ pro ifsf_makemaps,initproc
       tag_exist(initmaps,'noemlinfit') then begin
       message,'No emission line or absorption line data specified.'
    endif
-   
-;  Figure aspect ratio multiplier
-   if tag_exist(initmaps,'aspectrat') then aspectrat = initmaps.aspectrat $
-   else aspectrat = 1d
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Compute some things
@@ -284,6 +297,20 @@ pro ifsf_makemaps,initproc
       datacube.dat /= rebin(initmaps.vornorm,dx,dy,dz)
    endif
 
+;  Image window
+   if tag_exist(initmaps,'plotwin') then begin
+      plotwin = initmaps.plotwin
+      dxwin = plotwin[2]-plotwin[0]+1
+      dywin = plotwin[3]-plotwin[1]+1
+   endif else begin
+      plotwin = [1,1,dx,dy]
+      dxwin = dx
+      dywin = dy
+   endelse
+   
+;  Figure aspect ratio multiplier
+   if tag_exist(initmaps,'aspectrat') then aspectrat = initmaps.aspectrat $
+   else aspectrat = 1d
 
 ;  HST data
    dohst=0
@@ -852,7 +879,20 @@ pro ifsf_makemaps,initproc
                          * kpc_per_pix
    center_nuclei_kpc_y = (center_nuclei[1,*] - center_axes[1]) $
                          * kpc_per_pix
-
+;  in image window
+   xwinran_kpc = double([-(center_axes[0]-0.5-(plotwin[0]-1)),$
+                         dxwin-(center_axes[0]-0.5-(plotwin[0]-1))]) $
+                        * kpc_per_pix
+   ywinran_kpc = double([-(center_axes[1]-0.5-(plotwin[1]-1)),$
+                         dywin-(center_axes[1]-0.5-(plotwin[1]-1))]) $
+                        * kpc_per_pix
+;   center_nuclei_kpc_xwin = (center_nuclei[0,*]-center_axes[0]-(plotwin[0]-1)) $
+;                            * kpc_per_pix
+;   center_nuclei_kpc_ywin = (center_nuclei[1,*]-center_axes[1]-(plotwin[1]-1)) $
+;                            * kpc_per_pix
+   center_nuclei_kpc_xwin = center_nuclei_kpc_x
+   center_nuclei_kpc_ywin = center_nuclei_kpc_y
+   
 ;  HST FOV
    if (dohstrd OR dohstbl) then begin
       if dohstbl then size_subim = size(bhst_fov) $
@@ -2515,7 +2555,7 @@ pro ifsf_makemaps,initproc
    topmargin_in = 0.5d
    halfmargin_in = margin_in/2d
    xsize_in = xpanel_in*double(npx) + margin_in
-   aspectrat_fov=double(dx)/double(dy)
+   aspectrat_fov=double(dxwin)/double(dywin)
    ysize_in = xpanel_in/aspectrat_fov*double(npy) + $
               margin_in*(1.5d + (double(npy)-1)) + topmargin_in
 ;  Sizes and positions of image windows in real and normalized coordinates
@@ -2587,7 +2627,7 @@ pro ifsf_makemaps,initproc
 ;     Set up range
       if hasrangefile then begin
          ithisline = where(rangeline eq 'stel' AND $
-                              rangequant eq 'vel',ctthisline)
+                           rangequant eq 'vel',ctthisline)
          if ctthisline eq 1 then auto=0b
       endif else auto=1b
       plotdat = ifsf_plotrange(auto=auto,$
@@ -2599,27 +2639,30 @@ pro ifsf_makemaps,initproc
                                rncbdiv=rangencbdiv,$
                                rlo=rangelo,rhi=rangehi)
 
-      mapscl = bytscl(rebin(map,dx*samplefac,dy*samplefac,/sample),$
+      mapscl = bytscl(rebin(map[plotwin[0]-1:plotwin[2]-1,$
+                                plotwin[1]-1:plotwin[3]-1],$
+                            dxwin*samplefac,dywin*samplefac,/sample),$
                       min=plotdat[0],max=plotdat[1])
       cgloadct,74,/reverse
       cgimage,mapscl,/keep,pos=pos_top[*,0],opos=truepos,$
               missing_value=bad,missing_index=255,$
               missing_color='white'
       cgplot,[0],xsty=5,ysty=5,position=truepos,$
-             /nodata,/noerase,xran=[0,dx],yran=[0,dy]
+             /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
 ;     Velocity contours
       if tag_exist(initmaps,'contourlevels') then begin
          key = 'stel_vel'
          if initmaps.contourlevels->haskey(key) then begin
             nlevels = n_elements(initmaps.contourlevels[key])
-            cgcontour,map,dindgen(dx)+0.5,dindgen(dy)+0.5,$
+            cgcontour,map,dindgen(dxwin)+0.5,dindgen(dywin)+0.5,$
                       /overplot,color=0,c_linesty=2,c_thick=4,$
                       levels=initmaps.contourlevels[key],$
                       max=1000d
          endif
       endif
-      ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                       center_nuclei_kpc_y,/toplab
+      ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                       center_nuclei_kpc_ywin,/toplab
+                       
 ;     Colorbar
       xoffset = pan_xfrac*0.05
       yoffset = mar_yfrac*0.2
@@ -2652,16 +2695,18 @@ pro ifsf_makemaps,initproc
                                   rquant=rangequant,matquant='vel_err',$
                                   rncbdiv=rangencbdiv,$
                                   rlo=rangelo,rhi=rangehi)
-         mapscl = bytscl(rebin(maperr,dx*samplefac,dy*samplefac,/sample),$
-                               min=plotdat[0],max=plotdat[1])
+         mapscl = bytscl(rebin(maperr[plotwin[0]-1:plotwin[2]-1,$
+                                      plotwin[1]-1:plotwin[3]-1],$
+                               dxwin*samplefac,dywin*samplefac,/sample),$
+                         min=plotdat[0],max=plotdat[1])
          cgloadct,74,/reverse
          cgimage,mapscl,/keep,pos=pos_bot[*,0],opos=truepos,$
                  missing_value=bad,missing_index=255,$
                  missing_color='white',/noerase
          cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                /nodata,/noerase,xran=[0,dx],yran=[0,dy]
-         ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                          center_nuclei_kpc_y,/noxlab
+                /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
+         ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                          center_nuclei_kpc_ywin,/noxlab
 ;        Colorbar
          xoffset = pan_xfrac*0.05
          yoffset = mar_yfrac*0.2
@@ -2708,16 +2753,18 @@ pro ifsf_makemaps,initproc
                                   rncbdiv=rangencbdiv,$
                                   rlo=rangelo,rhi=rangehi)
 
-         mapscl = bytscl(rebin(map,dx*samplefac,dy*samplefac,/sample),$
+         mapscl = bytscl(rebin(map[plotwin[0]-1:plotwin[2]-1,$
+                                   plotwin[1]-1:plotwin[3]-1],$
+                               dxwin*samplefac,dywin*samplefac,/sample),$
                          min=plotdat[0],max=plotdat[1])
          cgloadct,65,/reverse
          cgimage,mapscl,/keep,pos=pos_top[*,1],opos=truepos,$
                  /noerase,missing_value=bad,missing_index=255,$
                  missing_color='white'
          cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                /nodata,/noerase,xran=[0,dx],yran=[0,dy]
-         ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                          center_nuclei_kpc_y,/nolab
+                /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
+         ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                          center_nuclei_kpc_ywin,/nolab
 ;        Colorbar
          xoffset = pan_xfrac*0.05
          yoffset = mar_yfrac*0.2
@@ -2750,16 +2797,18 @@ pro ifsf_makemaps,initproc
                                      rquant=rangequant,matquant='vsig_err',$
                                      rncbdiv=rangencbdiv,$
                                      rlo=rangelo,rhi=rangehi)
-            mapscl = bytscl(rebin(maperr,dx*samplefac,dy*samplefac,/sample),$
-                                  min=plotdat[0],max=plotdat[1])
+            mapscl = bytscl(rebin(maperr[plotwin[0]-1:plotwin[2]-1,$
+                                         plotwin[1]-1:plotwin[3]-1],$
+                                  dxwin*samplefac,dywin*samplefac,/sample),$
+                            min=plotdat[0],max=plotdat[1])
             cgloadct,74,/reverse
             cgimage,mapscl,/keep,pos=pos_bot[*,1],opos=truepos,$
                     missing_value=bad,missing_index=255,$
                     missing_color='white',/noerase
             cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                   /nodata,/noerase,xran=[0,dx],yran=[0,dy]
-            ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                             center_nuclei_kpc_y,/nolab
+                   /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
+            ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                             center_nuclei_kpc_ywin,/nolab
 ;           Colorbar
             xoffset = pan_xfrac*0.05
             yoffset = mar_yfrac*0.2
@@ -2809,16 +2858,18 @@ pro ifsf_makemaps,initproc
 
          plotdat_stel_ebv = plotdat
 
-         mapscl = bytscl(rebin(map,dx*samplefac,dy*samplefac,/sample),$
+         mapscl = bytscl(rebin(map[plotwin[0]-1:plotwin[2]-1,$
+                                   plotwin[1]-1:plotwin[3]-1],$
+                               dxwin*samplefac,dywin*samplefac,/sample),$
                          min=plotdat[0],max=plotdat[1])
          cgloadct,65,/reverse
          cgimage,mapscl,/keep,pos=pos_top[*,npx-1],opos=truepos,$
                  /noerase,missing_value=bad,missing_index=255,$
                  missing_color='white'
          cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                /nodata,/noerase,xran=[0,dx],yran=[0,dy]
-         ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                          center_nuclei_kpc_y,/nolab
+                /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
+         ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                          center_nuclei_kpc_ywin,/nolab
 ;        Colorbar
          xoffset = pan_xfrac*0.05
          yoffset = mar_yfrac*0.2
@@ -2851,16 +2902,18 @@ pro ifsf_makemaps,initproc
                                      rquant=rangequant,matquant='ebv_err',$
                                      rncbdiv=rangencbdiv,$
                                      rlo=rangelo,rhi=rangehi)
-            mapscl = bytscl(rebin(maperr,dx*samplefac,dy*samplefac,/sample),$
-                                  min=plotdat[0],max=plotdat[1])
+            mapscl = bytscl(rebin(maperr[plotwin[0]-1:plotwin[2]-1,$
+                                         plotwin[1]-1:plotwin[3]-1],$
+                                  dxwin*samplefac,dywin*samplefac,/sample),$
+                            min=plotdat[0],max=plotdat[1])
             cgloadct,74,/reverse
             cgimage,mapscl,/keep,pos=pos_bot[*,npx-1],opos=truepos,$
                     missing_value=bad,missing_index=255,$
                     missing_color='white',/noerase
             cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                   /nodata,/noerase,xran=[0,dx],yran=[0,dy]
-            ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                             center_nuclei_kpc_y,/nolab
+                   /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
+            ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                             center_nuclei_kpc_ywin,/nolab
 ;           Colorbar
             xoffset = pan_xfrac*0.05
             yoffset = mar_yfrac*0.2
@@ -2934,7 +2987,7 @@ pro ifsf_makemaps,initproc
       topmargin_in = 0.5d
       halfmargin_in = margin_in/1d
       xsize_in = xpanel_in*double(npx) + margin_in
-      aspectrat_fov=double(dx)/double(dy)
+      aspectrat_fov=double(dxwin)/double(dywin)
       ysize_in = (xpanel_in * 1d/aspectrat_fov + margin_in)*2d + topmargin_in
 ;     Sizes and positions of image windows in real and normalized coordinates
       pan_xfrac = xpanel_in/xsize_in
@@ -3007,7 +3060,9 @@ pro ifsf_makemaps,initproc
                
                   map[igd] = map[igd]/zmax_flux[0]
                   if ctbd gt 0 then map[ibd] = bad
-                  mapscl = bytscl(rebin(map,dx*samplefac,dy*samplefac,/sample),$
+                  mapscl = bytscl(rebin(map[plotwin[0]-1:plotwin[2]-1,$
+                                            plotwin[1]-1:plotwin[3]-1],$
+                                  dxwin*samplefac,dywin*samplefac,/sample),$
                                   min=zran[0],max=zran[1])
    
 ;                 Plot image
@@ -3016,7 +3071,7 @@ pro ifsf_makemaps,initproc
                           noerase=iplot ne 0,missing_value=bad,missing_index=255,$
                           missing_color='white'
                   cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                         /nodata,/noerase,xran=[0,dx],yran=[0,dy]
+                         /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
 ;                 Disk axes
                   linsty_da=[2,1]
                   if diskaxes_endpoints[0] ne 0b then $
@@ -3024,11 +3079,11 @@ pro ifsf_makemaps,initproc
                                           diskaxes_endpoints[*,1,k]+0.5d,$
                                           thick=4,linesty=linsty_da[k]
                   if j eq 0 then $
-                     ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                                      center_nuclei_kpc_y,/toplab $
+                     ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                                      center_nuclei_kpc_ywin,/toplab $
                   else $
-                     ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                                      center_nuclei_kpc_y,/nolab
+                     ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                                      center_nuclei_kpc_ywin,/nolab
 ;                 Colorbar
                   if j eq 1 then begin
                      xoffset = pan_xfrac*0.05
@@ -3088,7 +3143,9 @@ pro ifsf_makemaps,initproc
                   endif
  
                   if ctbd gt 0 then map[ibd] = bad
-                  mapscl = bytscl(rebin(map,dx*samplefac,dy*samplefac,/sample),$
+                  mapscl = bytscl(rebin(map[plotwin[0]-1:plotwin[2]-1,$
+                                            plotwin[1]-1:plotwin[3]-1],$
+                                  dxwin*samplefac,dywin*samplefac,/sample),$
                                   min=zran[0],max=zran[1])
    
 ;                 Plot image
@@ -3098,20 +3155,27 @@ pro ifsf_makemaps,initproc
                           noerase=iplot ne 0,missing_value=bad,missing_index=255,$
                           missing_color='white'
                   cgplot,[0],xsty=5,ysty=5,position=truepos,$
-                         /nodata,/noerase,xran=[0,dx],yran=[0,dy]
+                         /nodata,/noerase,xran=[0,dxwin],yran=[0,dywin]
 ;                 Velocity contours
                   if tag_exist(initmaps,'contourlevels') then begin
                      key = line+'_'+vtags[j]
 ;                    Not sure why levels aren't being labeled
                      if initmaps.contourlevels->haskey(key) then begin
                         nlevels = n_elements(initmaps.contourlevels[key])
-                        cgcontour,map,dindgen(dx)+0.5,dindgen(dy)+0.5,$
-                                  /overplot,color=0,c_linesty=2,c_thick=4,$
-                                  levels=initmaps.contourlevels[key],$
-;                                  max=initmaps.contourmax[key]
-                                  max=1000d
-;                                  c_labels=dblarr(nlevels)+1b,$
-;                                  c_charsize=0.75
+                        if tag_exist(initmaps,'argscontour') then $
+                           cgcontour,map[plotwin[0]-1:plotwin[2]-1,$
+                                         plotwin[1]-1:plotwin[3]-1],$
+                                     dindgen(dxwin)+0.5,dindgen(dywin)+0.5,$
+                                     /overplot,$
+                                     levels=initmaps.contourlevels[key],$
+                                     _extra = initmaps.argscontour $
+                        else $
+                           cgcontour,map[plotwin[0]-1:plotwin[2]-1,$
+                                         plotwin[1]-1:plotwin[3]-1],$
+                                     dindgen(dxwin)+0.5,dindgen(dywin)+0.5,$
+                                     /overplot,color=0,c_linesty=2,c_thick=4,$
+                                     levels=initmaps.contourlevels[key],$
+                                     max=1000d
                      endif
                   endif
 ;;                 Cross section
@@ -3128,8 +3192,8 @@ pro ifsf_makemaps,initproc
 ;                     for k=0,1 do cgoplot,diskaxes_endpoints[*,0,k]+0.5d,$
 ;                                          diskaxes_endpoints[*,1,k]+0.5d,$
 ;                                          thick=4,linesty=linsty_da[k]
-                  ifsf_plotaxesnuc,xran_kpc,yran_kpc,center_nuclei_kpc_x,$
-                                   center_nuclei_kpc_y,/nolab
+                  ifsf_plotaxesnuc,xwinran_kpc,ywinran_kpc,center_nuclei_kpc_xwin,$
+                                   center_nuclei_kpc_ywin,/nolab
 ;                 Colorbar
                   xoffset = pan_xfrac*0.05
                   yoffset = mar_yfrac*0.2

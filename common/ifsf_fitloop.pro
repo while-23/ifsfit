@@ -158,7 +158,7 @@ pro ifsf_fitloop,ispax,colarr,rowarr,cube,initdat,linelist,oned,onefit,quiet,$
 
          if ~ tag_exist(initdat,'noemlinfit') then $
             nocomp_emlist = $
-            ncomp.where(0,complement=comp_emlist,ncomp=ct_comp_emlist) $
+               ncomp.where(0,complement=comp_emlist,ncomp=ct_comp_emlist) $
          else ct_comp_emlist=0
 
          if tag_exist(initdat,'siglim_gas') then begin
@@ -230,6 +230,7 @@ pro ifsf_fitloop,ispax,colarr,rowarr,cube,initdat,linelist,oned,onefit,quiet,$
                             initdat.maxncomp)
          linelistz_init = linelistz
 
+         if ~ quiet then print,'IFSF_FITLOOP: First call to IFSF_FITSPEC'
          structinit = ifsf_fitspec(cube.wave,flux,err,dq,zstar,linelist,$
                                    linelistz,ncomp,initdat,quiet=quiet,$
                                    siglim_gas=siglim_gas,$
@@ -276,6 +277,7 @@ pro ifsf_fitloop,ispax,colarr,rowarr,cube,initdat,linelist,oned,onefit,quiet,$
             endelse
 
             zstar_init2 = structinit.zstar
+            if ~ quiet then print,'IFSF_FITLOOP: Second call to IFSF_FITSPEC'
             struct = ifsf_fitspec(cube.wave,flux,err,dq,structinit.zstar,$
                                   linelist,$
                                   linelistz,ncomp,initdat,quiet=quiet,$
